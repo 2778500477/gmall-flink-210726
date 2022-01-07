@@ -35,7 +35,7 @@ public class Flink_CDCWithCustomerSchema_Ods {
         env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
 
         //设置任务关闭时,保留最后一次ck数据
-        env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.DELETE_ON_CANCELLATION);
+        env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
 
         //指定ck的自动重启策略
         env.setRestartStrategy(RestartStrategies.fixedDelayRestart(3,3000L));

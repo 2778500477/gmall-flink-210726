@@ -1,4 +1,4 @@
-package com.guohaoyu.ods;
+package com.guohaoyu.dwd;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
@@ -35,11 +35,11 @@ public class BaseLogApp {
         //设置ck的一致性语义
         env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
         //设置程序结束后,保留最后一次的ck数据
-        env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.DELETE_ON_CANCELLATION);
+        env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
         //设置ck的自动重启策略
         env.setRestartStrategy(RestartStrategies.fixedDelayRestart(3,3000L));
         //设置状态后端
-        env.setStateBackend(new FsStateBackend("hdfs://hadoop102:9092/flinkCDC"));
+        env.setStateBackend(new FsStateBackend("hdfs://hadoop102:9092/gmall/dwd_log"));
         //设置用户访问名
         System.setProperty("HADOOP_USER_NAME","guohaoyu");
         //读取kafka中的ods_base_log数据
