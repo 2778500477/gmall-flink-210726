@@ -39,7 +39,7 @@ public class BaseLogApp {
         //设置ck的自动重启策略
         env.setRestartStrategy(RestartStrategies.fixedDelayRestart(3,3000L));
         //设置状态后端
-        env.setStateBackend(new FsStateBackend("hdfs://hadoop102:9092/gmall/dwd_log"));
+        env.setStateBackend(new FsStateBackend("hdfs://hadoop102:8020/gmall/dwd_log"));
         //设置用户访问名
         System.setProperty("HADOOP_USER_NAME","guohaoyu");
         //读取kafka中的ods_base_log数据
