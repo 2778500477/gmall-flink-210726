@@ -1,15 +1,19 @@
 package com.guohaoyu.dwm;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONAware;
+import com.alibaba.fastjson.JSONObject;
 import com.guohaoyu.bean.OrderDetail;
 import com.guohaoyu.bean.OrderInfo;
 import com.guohaoyu.bean.OrderWide;
+import com.guohaoyu.func.DimAsyncFunction;
 import com.guohaoyu.util.MyKafkaUtil;
 import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.runtime.state.filesystem.FsStateBackend;
 import org.apache.flink.streaming.api.CheckpointingMode;
+import org.apache.flink.streaming.api.datastream.AsyncDataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
@@ -20,9 +24,10 @@ import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.util.Collector;
 
 import java.text.SimpleDateFormat;
+import java.util.concurrent.TimeUnit;
 
 public class OrderWideApp {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         //获取流的执行环境
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(1);
@@ -91,10 +96,109 @@ public class OrderWideApp {
                     }
                 });
         //关联维度信息
+        //关联用户维度
+        SingleOutputStreamOperator<OrderWide> orderWideWithUserDS = AsyncDataStream.unorderedWait(orderWideDS,
+                new DimAsyncFunction<OrderWide>("DIM_USER_INFO") {
+                    @Override
+                    public String getKey(OrderWide input) {
+                        return input.getUser_id().toString();
+                    }
 
-        //将数据写入kafka
+                    @Override
+                    public void join(OrderWide input, JSONObject dimInfo) throws Exception {
+                        String birthday = dimInfo.getString("BIRTHDAY");
+                        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+                        long curTs = System.currentTimeMillis();
+                        long ts = sdf.parse(birthday).getTime();
+                        long age = (curTs - ts) / (1000L * 60 * 60 * 24 * 365);
+                        input.setUser_age((int) age);
+
+                        input.setUser_gender(dimInfo.getString("GENDER"));
+                    }
+                }
+                , 100, TimeUnit.SECONDS);
+
+        //关联地区维度
+        SingleOutputStreamOperator<OrderWide> orderWideWithProvinceDS  = AsyncDataStream.unorderedWait(orderWideWithUserDS,
+                new DimAsyncFunction<OrderWide>("DIM_BASE_PROVINCE") {
+                    @Override
+                    public String getKey(OrderWide input) {
+                        return input.getProvince_id().toString();
+                    }
+
+                    @Override
+                    public void join(OrderWide input, JSONObject dimInfo) throws Exception {
+                        //提取维度信息并补全字段
+                        input.setProvince_name(dimInfo.getString("NAME"));
+                        input.setProvince_area_code(dimInfo.getString("AREA_CODE"));
+                        input.setProvince_iso_code(dimInfo.getString("ISO_CODE"));
+                        input.setProvince_3166_2_code(dimInfo.getString("ISO_3166_2"));
+                    }
+                },
+                100, TimeUnit.SECONDS);
+        //关联sku
+        SingleOutputStreamOperator<OrderWide> orderWideWithSkuDS  = AsyncDataStream.unorderedWait(orderWideWithProvinceDS,
+                new DimAsyncFunction<OrderWide>("DIM_BASE_PROVINCE") {
+                    @Override
+                    public String getKey(OrderWide input) {
+                        return input.getSku_id().toString();
+                    }
+
+                    @Override
+                    public void join(OrderWide input, JSONObject dimInfo) throws Exception {
+                        input.setSku_name(dimInfo.getString("SKU_NAME"));
+                        input.setCategory3_id(dimInfo.getLong("CATEGORY3_ID"));
+                        input.setSpu_id(dimInfo.getLong("SPU_ID"));
+                        input.setTm_id(dimInfo.getLong("TM_ID"));
+                    }
+                }, 100, TimeUnit.SECONDS);
+        //关联spu
+        SingleOutputStreamOperator<OrderWide> orderWideWithSpuDS = AsyncDataStream.unorderedWait(
+                orderWideWithSkuDS, new DimAsyncFunction<OrderWide>("DIM_SPU_INFO") {
+                    @Override
+                    public void join(OrderWide orderWide, JSONObject jsonObject) throws Exception {
+                        orderWide.setSpu_name(jsonObject.getString("SPU_NAME"));
+                    }
+
+                    @Override
+                    public String getKey(OrderWide orderWide) {
+                        return String.valueOf(orderWide.getSpu_id());
+                    }
+                }, 100, TimeUnit.SECONDS);
+
+        //关联category品类维度
+        SingleOutputStreamOperator<OrderWide> orderWideWithTmDS = AsyncDataStream.unorderedWait(
+                orderWideWithSpuDS, new DimAsyncFunction<OrderWide>("DIM_BASE_TRADEMARK") {
+                    @Override
+                    public void join(OrderWide orderWide, JSONObject jsonObject) throws Exception {
+                        orderWide.setTm_name(jsonObject.getString("TM_NAME"));
+                    }
+
+                    @Override
+                    public String getKey(OrderWide orderWide) {
+                        return String.valueOf(orderWide.getTm_id());
+                    }
+                }, 100, TimeUnit.SECONDS);
+
+        //关联trademark品牌维度
+        SingleOutputStreamOperator<OrderWide> orderWideWithCategory3DS = AsyncDataStream.unorderedWait(
+                orderWideWithTmDS, new DimAsyncFunction<OrderWide>("DIM_BASE_CATEGORY3") {
+                    @Override
+                    public void join(OrderWide orderWide, JSONObject jsonObject) throws Exception {
+                        orderWide.setCategory3_name(jsonObject.getString("NAME"));
+                    }
+
+                    @Override
+                    public String getKey(OrderWide orderWide) {
+                        return String.valueOf(orderWide.getCategory3_id());
+                    }
+                }, 100, TimeUnit.SECONDS);
+
+        orderWideWithCategory3DS.print(">>>>>>>>");
+        //将数据写入kafka   dwd_order_wide
+        orderWideWithCategory3DS.map(JSON::toJSONString).addSink(MyKafkaUtil.getKafkaSink(orderWideSinkTopic));
 
         //启动任务
-
+        env.execute();
     }
 }

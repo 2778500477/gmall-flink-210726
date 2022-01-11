@@ -40,7 +40,7 @@ public class TableProcessFunction extends BroadcastProcessFunction<JSONObject, S
     public void open(Configuration parameters) throws Exception {
         //加载驱动
         Class.forName(GmallConfig.PHOENIX_DRIVER);
-        connection = DriverManager.getConnection(GmallConfig.CLICKHOUSE_URL);
+        connection = DriverManager.getConnection(GmallConfig.PHOENIX_SERVER);
     }
 
     //处理jsonObject中封装的数据
