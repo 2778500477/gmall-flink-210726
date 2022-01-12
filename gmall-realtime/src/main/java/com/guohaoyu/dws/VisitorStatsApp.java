@@ -3,6 +3,7 @@ package com.guohaoyu.dws;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.guohaoyu.bean.VisitorStats;
+import com.guohaoyu.util.ClickHouseUtil;
 import com.guohaoyu.util.DateTimeUtil;
 import com.guohaoyu.util.MyKafkaUtil;
 import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
@@ -25,7 +26,7 @@ import java.time.Duration;
 import java.util.Date;
 
 public class VisitorStatsApp {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         //获取执行环境
         //TODO 0.基本环境准备
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -139,8 +140,8 @@ public class VisitorStatsApp {
                     }
                 });
         //将数据写入clickHouse
-
+        visitorStatsReduceDS.addSink(ClickHouseUtil.getJdbcSink("insert into visitor_stats_210726 values(?,?,?,?,?,?,?,?,?,?,?,?)"));
         //启动任务
-
+        env.execute();
     }
 }
